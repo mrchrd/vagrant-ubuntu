@@ -1,0 +1,38 @@
+---
+version: 3
+
+dotenv: [secrets.env, build.env]
+
+vars:
+  UBUNTU_IMAGE: docker.io/ubuntu:noble
+
+  WORKDIR: "{{.ROOT_DIR}}"
+  BUILDDIR: "{{.WORKDIR}}/build"
+  BUILDID:
+    sh: date +%Y%m%d
+
+tasks:
+  default:
+    cmds:
+    - task: build
+
+  build:
+    cmds:
+    - task: ubuntu
+      vars:
+        ARGS: ./src/vagrant.binary
+
+  ubuntu:
+    internal: true
+    cmds:
+    - >-
+      docker run --rm
+      --env "SOURCE_URL={{.SOURCE_URL}}"
+      --env "BUILD_DIR={{.BUILDDIR}}"
+      --env "BUILD_ID={{.BUILDID}}"
+      --privileged
+      --volume "{{.WORKDIR}}:{{.WORKDIR}}:ro"
+      --volume "{{.BUILDDIR}}:{{.BUILDDIR}}:rw"
+      --workdir "{{.WORKDIR}}"
+      "{{.UBUNTU_IMAGE}}"
+      {{.ARGS}}
