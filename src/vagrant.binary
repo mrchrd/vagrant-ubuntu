@@ -48,7 +48,7 @@ mount_d=$(mktemp -d)
 
 if [ ! -f "${build_d}/binary/boot/disk.ext4" ]; then
     mkdir -p "${build_d}/binary/boot"
-    wget -qO "${build_d}/binary/boot/disk.ext4 ${source_url}"
+    wget -qO "${build_d}/binary/boot/disk.ext4" "${source_url}"
 fi
 
 create_derivative "disk" "vagrant" "${build_d}/binary/boot" #sets ${derivative_img}
