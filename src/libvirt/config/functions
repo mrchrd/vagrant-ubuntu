@@ -1,0 +1,119 @@
+# vi: ts=4 expandtab syntax=sh
+
+
+tmpdir=$(mktemp -d)
+
+setup_mountpoint() {
+    local mountpoint="$1"
+
+    if [ ! -c /dev/mem ]; then
+        mknod -m 660 /dev/mem c 1 1
+        chown root:kmem /dev/mem
+    fi
+
+    mount -o bind /dev "$mountpoint/dev"
+    mount devpts-live -t devpts -o nodev,nosuid "$mountpoint/dev/pts"
+    mount proc-live -t proc "$mountpoint/proc"
+    mount sysfs-live -t sysfs "$mountpoint/sys"
+    # cgroup2 mount for LP: 1944004
+    mount -t cgroup2 none "$mountpoint/sys/fs/cgroup"
+    mount -t tmpfs none "$mountpoint/tmp"
+    mount -t tmpfs none "$mountpoint/var/lib/apt/lists"
+    mount -t tmpfs none "$mountpoint/var/cache/apt"
+    mv "$mountpoint/etc/resolv.conf" "$tmpdir/resolv.conf.tmp"
+    cp /etc/resolv.conf "$mountpoint/etc/resolv.conf"
+    mv "$mountpoint/etc/nsswitch.conf" "$tmpdir/nsswitch.conf.tmp"
+    sed 's/systemd//g' "$tmpdir/nsswitch.conf.tmp" > "$mountpoint/etc/nsswitch.conf"
+    chroot "$mountpoint" apt-get update
+
+}
+
+teardown_mountpoint() {
+    # Reverse the operations from setup_mountpoint
+    local mountpoint=$(realpath "$1")
+
+    # ensure we have exactly one trailing slash, and escape all slashes for awk
+    mountpoint_match=$(echo "$mountpoint" | sed -e's,/$,,; s,/,\\/,g;')'\/'
+    # sort -r ensures that deeper mountpoints are unmounted first
+    for submount in $(awk </proc/self/mounts "\$2 ~ /$mountpoint_match/ \
+                      { print \$2 }" | LC_ALL=C sort -r); do
+        mount --make-private $submount
+        umount $submount
+    done
+    mv "$tmpdir/resolv.conf.tmp" "$mountpoint/etc/resolv.conf"
+    mv "$tmpdir/nsswitch.conf.tmp" "$mountpoint/etc/nsswitch.conf"
+    rmdir "$tmpdir"
+}
+
+mount_disk_image() {
+    local disk_image=${1}
+    local mountpoint=${2}
+
+    guestmount -a "${disk_image}" -i "${mountpoint}"
+    setup_mountpoint "${mountpoint}"
+
+    # This is needed to allow for certain operations
+    # such as updating grub and installing software
+    cat > $mountpoint/usr/sbin/policy-rc.d << EOF
+#!/bin/sh
+# ${IMAGE_STR}
+echo "All runlevel operations denied by policy" >&2
+exit 101
+EOF
+    chmod 0755 $mountpoint/usr/sbin/policy-rc.d
+}
+
+umount_partition() {
+    local mountpoint=${1}
+    teardown_mountpoint $mountpoint
+    mount --make-private $mountpoint
+    umount $mountpoint
+    # workaround for LP: 1960537
+    sleep 30 
+}
+
+umount_disk_image() {
+    mountpoint="$1"
+
+    if [ -e $mountpoint/usr/sbin/policy-rc.d ]; then
+        rm $mountpoint/usr/sbin/policy-rc.d
+    fi
+
+    umount_partition $mountpoint
+}
+
+create_qcow2() {
+    src="$1"
+    destination="$2"
+    size="${3:-10240}"
+
+    scratch_d=$(mktemp -d)
+    cp ${src} ${scratch_d}/resize.img
+
+    truncate --size=${size}M ${scratch_d}/resize.img
+    qemu-img convert -O qcow2 ${scratch_d}/resize.img ${destination}
+
+    qemu-img info ${destination}
+    rm -rf ${scratch_d}
+}
+
+create_derivative() {
+    # arg1 is the disk type
+    # arg2 is the new name
+    # arg3 is the directory of the disk image
+    unset derivative_img
+    img_d="${3:-binary/boot}"
+    case ${1} in
+           uefi) disk_image="${img_d}/disk-uefi.ext4";
+                 dname="${disk_image//-uefi/-$2-uefi}";;
+              *) disk_image="${img_d}/disk.ext4";
+                 dname="${disk_image//.ext4/-$2.ext4}";;
+    esac
+
+    if [ ! -e ${disk_image} ]; then
+        echo "Did not find ${disk_image}!"; exit 1;
+    fi
+
+    cp ${disk_image} ${dname}
+    export derivative_img=${dname}
+}

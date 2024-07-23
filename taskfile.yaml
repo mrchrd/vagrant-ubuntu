@@ -20,7 +20,11 @@ tasks:
     cmds:
     - task: ubuntu
       vars:
-        ARGS: ./src/vagrant.binary
+        ARGS: ./src/libvirt/vagrant.binary
+    - task: ubuntu
+      vars:
+        ARGS: ./src/virtualbox/vagrant.binary
+
 
   ubuntu:
     internal: true
