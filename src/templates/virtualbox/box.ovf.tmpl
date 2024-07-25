@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Envelope xmlns="http://schemas.dmtf.org/ovf/envelope/1" xmlns:cim="http://schemas.dmtf.org/wbem/wscim/1/common" xmlns:ovf="http://schemas.dmtf.org/ovf/envelope/1" xmlns:rasd="http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_ResourceAllocationSettingData" xmlns:vmw="http://www.vmware.com/schema/ovf" xmlns:vssd="http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_VirtualSystemSettingData" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
   <References>
-    <File ovf:href="@@DISK1_FILENAME@@" ovf:id="file1" ovf:size="@@DISK1_SIZE@@"/>
-    <File ovf:href="@@DISK2_FILENAME@@" ovf:id="file2" ovf:size="@@DISK2_SIZE@@"/>
+    <File ovf:href="{{.disk1_filename}}" ovf:id="file1" ovf:size="{{.disk1_size}}"/>
+    <File ovf:href="{{.disk2_filename}}" ovf:id="file2" ovf:size="{{.disk2_size}}"/>
   </References>
   <DiskSection>
     <Info>Virtual disk information</Info>
-    <Disk ovf:capacity="@@DISK1_CAPACITY@@" ovf:capacityAllocationUnits="byte" ovf:diskId="vmdisk1" ovf:fileRef="file1" ovf:format="http://www.vmware.com/interfaces/specifications/vmdk.html#streamOptimized" ovf:populatedSize="0"/>
-    <Disk ovf:capacity="@@DISK2_CAPACITY@@" ovf:capacityAllocationUnits="byte" ovf:diskId="vmdisk2" ovf:fileRef="file2" ovf:format="http://www.vmware.com/interfaces/specifications/vmdk.html#streamOptimized" ovf:populatedSize="0"/>
+    <Disk ovf:capacity="{{.disk1_capacity}}" ovf:capacityAllocationUnits="byte" ovf:diskId="vmdisk1" ovf:fileRef="file1" ovf:format="http://www.vmware.com/interfaces/specifications/vmdk.html#streamOptimized" ovf:populatedSize="0"/>
+    <Disk ovf:capacity="{{.disk2_capacity}}" ovf:capacityAllocationUnits="byte" ovf:diskId="vmdisk2" ovf:fileRef="file2" ovf:format="http://www.vmware.com/interfaces/specifications/vmdk.html#streamOptimized" ovf:populatedSize="0"/>
   </DiskSection>
   <NetworkSection>
     <Info>The list of logical networks</Info>
@@ -15,17 +15,17 @@
       <Description>The VM Network network</Description>
     </Network>
   </NetworkSection>
-  <VirtualSystem ovf:id="@@OVF_NAME@@">
+  <VirtualSystem ovf:id="{{.ovf_name}}">
     <Info>A virtual machine</Info>
-    <Name>@@OVF_NAME@@</Name>
-    <OperatingSystemSection ovf:id="@@OVF_ID@@" vmw:osType="@@OVF_OS_TYPE@@">
+    <Name>{{.ovf_name}}</Name>
+    <OperatingSystemSection ovf:id="{{.ovf_id}}" vmw:osType="{{.ovf_os_type}}">
       <Info>The kind of installed guest operating system</Info>
-      <Description>Ubuntu Linux (@@OVF_DESC_BITS@@-bit)</Description>
+      <Description>Ubuntu Linux ({{.ovf_desc_bits}})</Description>
     </OperatingSystemSection>
 
     <ProductSection ovf:required="false">
       <Info>Cloud-Init customization</Info>
-      <Product>Ubuntu @@UBUNTU_VERSION@@ Server (@@DATE@@)</Product>
+      <Product>Ubuntu {{.ubuntu_version}} Server ({{.date}})</Product>
       <Property ovf:key="instance-id" ovf:type="string" ovf:userConfigurable="true" ovf:value="id-ovf">
           <Label>A Unique Instance ID for this instance</Label>
           <Description>Specifies the instance id.  This is required and used to determine if the machine should take "first boot" actions</Description>
@@ -59,24 +59,24 @@
       <System>
         <vssd:ElementName>Virtual Hardware Family</vssd:ElementName>
         <vssd:InstanceID>0</vssd:InstanceID>
-        <vssd:VirtualSystemIdentifier>@@OVF_NAME@@</vssd:VirtualSystemIdentifier>
+        <vssd:VirtualSystemIdentifier>{{.ovf_name}}</vssd:VirtualSystemIdentifier>
         <vssd:VirtualSystemType>vmx-10</vssd:VirtualSystemType>
       </System>
       <Item>
         <rasd:AllocationUnits>hertz * 10^6</rasd:AllocationUnits>
         <rasd:Description>Number of Virtual CPUs</rasd:Description>
-        <rasd:ElementName>@@NUM_CPUS@@ virtual CPU(s)</rasd:ElementName>
+        <rasd:ElementName>{{.num_cpus}} virtual CPU(s)</rasd:ElementName>
         <rasd:InstanceID>1</rasd:InstanceID>
         <rasd:ResourceType>3</rasd:ResourceType>
-        <rasd:VirtualQuantity>@@NUM_CPUS@@</rasd:VirtualQuantity>
+        <rasd:VirtualQuantity>{{.num_cpus}}</rasd:VirtualQuantity>
       </Item>
       <Item>
         <rasd:AllocationUnits>byte * 2^20</rasd:AllocationUnits>
         <rasd:Description>Memory Size</rasd:Description>
-        <rasd:ElementName>@@MEM_SIZE@@MB of memory</rasd:ElementName>
+        <rasd:ElementName>{{.mem_size}}MB of memory</rasd:ElementName>
         <rasd:InstanceID>2</rasd:InstanceID>
         <rasd:ResourceType>4</rasd:ResourceType>
-        <rasd:VirtualQuantity>@@MEM_SIZE@@</rasd:VirtualQuantity>
+        <rasd:VirtualQuantity>{{.mem_size}}</rasd:VirtualQuantity>
       </Item>
       <Item>
         <rasd:Address>0</rasd:Address>

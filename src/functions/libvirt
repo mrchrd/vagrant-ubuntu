@@ -1,0 +1,16 @@
+# vi: ts=4 expandtab syntax=sh
+
+create_qcow2() {
+    src="$1"
+    destination="$2"
+    size="${3:-10240}"
+
+    scratch_d=$(mktemp -d)
+    cp ${src} ${scratch_d}/resize.img
+    
+    truncate --size=${size}M ${scratch_d}/resize.img
+    qemu-img convert -O qcow2 ${scratch_d}/resize.img ${destination}
+    
+    qemu-img info ${destination}
+    rm -rf ${scratch_d}
+}

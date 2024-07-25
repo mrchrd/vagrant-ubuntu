@@ -3,13 +3,13 @@
   "disks": [
     {
       "format": "qcow2",
-      "path": "@@DISK1_FILENAME@@",
-      "virtual_size": @@DISK1_CAPACITY@@
+      "path": "{{.disk1_filename}}",
+      "virtual_size": {{.disk1_capacity}}
     },
     {
       "format": "qcow2",
-      "path": "@@DISK2_FILENAME@@",
-      "virtual_size": @@DISK2_CAPACITY@@
+      "path": "{{.disk2_filename}}",
+      "virtual_size": {{.disk2_capacity}}
     }
   ]
 }

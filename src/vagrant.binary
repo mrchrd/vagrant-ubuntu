@@ -13,19 +13,11 @@ source_url="${SOURCE_IMG_URL:-https://cloud-images.ubuntu.com/noble/current/nobl
 build_id="${BUILD_ID:-$(date +%Y%m%d)}"
 build_d="${BUILD_DIR:-$cur_d}"
 
-export DEBIAN_FRONTEND=noninteractive
-apt-get update
-apt-get install -y --no-install-recommends \
-    ca-certificates \
-    genisoimage \
-    libguestfs-tools \
-    linux-image-$(uname -r) \
-    python3-vmdkstream \
-    qemu-utils \
-    wget \
-    ;
+for f in "${my_d}/functions/"*; do
+  . "$f"
+done
 
-. "${my_d}/config/functions"
+install_dependencies
 
 # Lets be safe about this
 box_libvirt_d=$(mktemp -d)
@@ -100,25 +92,14 @@ cdrom_vmdk_f="${box_virtualbox_d}/${prefix}-configdrive.vmdk"
 # Create the user-data. This is totally insecure, but so is Vagrant. To
 # mitigate this insecurity, the vagrant instance is not accessible
 # except via local host.
-cp "${my_d}/templates/common/user-data.tmpl" "${seed_d}/user-data"
+create_from_template "${seed_d}/user-data" "${my_d}/templates/common/user-data.tmpl"
 
 # Create the fake meta-data
-cp "${my_d}/templates/common/meta-data.tmpl" "${seed_d}/meta-data"
-sed -i "${seed_d}/meta-data" \
-    -e "s/@@INSTANCE_ID@@/iid-$(openssl rand -hex 8)/g" \
-    -e "s/@@HOSTNAME@@/ubuntu-${suite}/g"
+create_from_template "${seed_d}/meta-data" "${my_d}/templates/common/meta-data.tmpl" \
+    "instance_id=iid-$(openssl rand -hex 8)" \
+    "hostname=ubuntu-${suite}"
 
-# Pad the cdrom, otherwise the image will be invalid
-dd if=/dev/zero of=${seed_d}/bloat_file bs=1M count=10
-
-# Create the ISO
-genisoimage \
-    -output ${seed_d}/seed.iso \
-    -volid cidata \
-    -joliet -rock \
-    -input-charset utf-8 \
-    ${seed_d}/user-data \
-    ${seed_d}/meta-data
+create_configdrive "${seed_d}"
 
 # Make an image out of the seed file.
 create_qcow2 ${seed_d}/seed.iso ${cdrom_qcow2_f} 10
@@ -126,30 +107,46 @@ create_vmdk ${seed_d}/seed.iso ${cdrom_vmdk_f} 10
 
 ### END Create ConfigDrive
 
+# Get information about the disks
+qcow2_size=$(get_image_size "${qcow2_f}")
+qcow2_capacity=$(get_image_capacity "${qcow2_f}")
+qcow2_sha256=$(get_image_checksum "${qcow2_f}")
+
+cdrom_qcow2_size=$(get_image_size "${cdrom_qcow2_f}")
+cdrom_qcow2_capacity=$(get_image_capacity "${cdrom_qcow2_f}")
+cdrom_qcow2_sha256=$(get_image_checksum "${cdrom_qcow2_f}")
+
+vmdk_size=$(get_image_size "${vmdk_f}")
+vmdk_capacity=$(get_image_capacity "${vmdk_f}")
+vmdk_sha256=$(get_image_checksum "${vmdk_f}")
+
+cdrom_vmdk_size=$(get_image_size "${cdrom_vmdk_f}")
+cdrom_vmdk_capacity=$(get_image_capacity "${cdrom_vmdk_f}")
+cdrom_vmdk_sha256=$(get_image_checksum "${cdrom_vmdk_f}")
+
 ##########################
 # VAGRANT meta-data
 
 # Create the Vagrant file. This file is used by Vagrant to define how
 # Vagrant uses libvirt and how Vagrant interacts with the host.
+create_from_template "${box_libvirt_d}/Vagrantfile" "${my_d}/templates/libvirt/Vagrantfile.tmpl" \
+    "console_log_filename=${prefix}-console.log"
 
-cp "${my_d}/templates/libvirt/Vagrantfile.tmpl" "${box_libvirt_d}/Vagrantfile"
-sed -i "${box_libvirt_d}/Vagrantfile" \
-    -e "s/@@CONSOLE_LOG_FILENAME@@/${prefix}-console.log/g"
-
-cp "${my_d}/templates/virtualbox/Vagrantfile.tmpl" "${box_virtualbox_d}/Vagrantfile"
-sed -i "${box_virtualbox_d}/Vagrantfile" \
-    -e "s/@@BASE_MAC@@/${macaddr}/g" \
-    -e "s/@@CONSOLE_LOG_FILENAME@@/${prefix}-console.log/g"
+macaddr="02$(openssl rand -hex 5 | tr [:lower:] [:upper:])"
+create_from_template "${box_virtualbox_d}/Vagrantfile" "${my_d}/templates/virtualbox/Vagrantfile.tmpl" \
+    "base_mac=${macaddr}" \
+    "console_log_filename=${prefix}-console.log"
 
 # Populate the metadata files
-cp "${my_d}/templates/libvirt/metadata.json.tmpl" "${box_libvirt_d}/metadata.json"
-sed -i "${box_libvirt_d}/metadata.json" \
-    -e "s/@@DISK1_CAPACITY@@/${qcow2_capacity}/g" \
-    -e "s/@@DISK1_FILENAME@@/${qcow2_f##*/}/g" \
-    -e "s/@@DISK2_CAPACITY@@/${cdrom_qcow2_capacity}/g" \
-    -e "s/@@DISK2_FILENAME@@/${cdrom_qcow2_f##*/}/g"
+serial_stamp=$(date +%Y%m%d)
+create_from_template "${box_libvirt_d}/metadata.json" "${my_d}/templates/libvirt/metadata.json.tmpl" \
+    "date=${serial_stamp}" \
+    "disk1_capacity=${qcow2_capacity}" \
+    "disk1_filename=${qcow2_f##*/}" \
+    "disk2_capacity=${cdrom_qcow2_capacity}" \
+    "disk2_filename=${cdrom_qcow2_f##*/}"
 
-cp "${my_d}/templates/virtualbox/metadata.json.tmpl" "${box_virtualbox_d}/metadata.json"
+create_from_template "${box_virtualbox_d}/metadata.json" "${my_d}/templates/virtualbox/metadata.json.tmpl"
 
 # END
 ##########################
@@ -157,58 +154,31 @@ cp "${my_d}/templates/virtualbox/metadata.json.tmpl" "${box_virtualbox_d}/metada
 ##########################
 # Create the actual box
 
-# Get information about the disks
-qcow2_size=$(du -b "${qcow2_f}" | cut -f1)
-qcow2_capacity=$(qemu-img info "${qcow2_f}" | awk '-F[\( ]' '$1 ~ /virtual/ && $NF ~ /bytes.*/ {print$(NF-1)}')
-qcow2_sha256=$(sha256sum ${qcow2_f} | cut -d' ' -f1)
-
-vmdk_size=$(du -b "${vmdk_f}" | cut -f1)
-vmdk_capacity=$(qemu-img info "${vmdk_f}" | awk '-F[\( ]' '$1 ~ /virtual/ && $NF ~ /bytes.*/ {print$(NF-1)}')
-vmdk_sha256=$(sha256sum ${vmdk_f} | cut -d' ' -f1)
-
-cdrom_qcow2_size=$(du -b "${cdrom_qcow2_f}" | cut -f1)
-cdrom_qcow2_capacity=$(qemu-img info "${cdrom_qcow2_f}" | awk '-F[\( ]' '$1 ~ /virtual/ && $NF ~ /bytes.*/ {print$(NF-1)}')
-cdrom_qcow2_sha256=$(sha256sum ${cdrom_qcow2_f} | cut -d' ' -f1)
-
-cdrom_vmdk_size=$(du -b "${cdrom_vmdk_f}" | cut -f1)
-cdrom_vmdk_capacity=$(qemu-img info "${cdrom_vmdk_f}" | awk '-F[\( ]' '$1 ~ /virtual/ && $NF ~ /bytes.*/ {print$(NF-1)}')
-cdrom_vmdk_sha256=$(sha256sum ${cdrom_vmdk_f} | cut -d' ' -f1)
-
 # Populate the OVF template
 ovf="${box_virtualbox_d}/box.ovf"
-cp ${my_d}/templates/virtualbox/box.ovf.tmpl ${ovf}
 serial_stamp=$(date +%Y%m%d)
-sed -i "${ovf}" \
-    -e "s/@@DATE@@/${serial_stamp}/g" \
-    -e "s/@@MEM_SIZE@@/1024/g" \
-    -e "s/@@NUM_CPUS@@/2/g" \
-    -e "s/@@OVF_DESC_BITS@@/64/g" \
-    -e "s/@@OVF_ID@@/94/g" \
-    -e "s/@@OVF_NAME@@/${prefix}-${serial_stamp}/g" \
-    -e "s/@@OVF_OS_TYPE@@/ubuntu64Guest/g" \
-    -e "s/@@UBUNTU_VERSION@@/${version}/g" \
-    -e "s/@@DISK1_CAPACITY@@/${vmdk_capacity}/g" \
-    -e "s/@@DISK1_FILENAME@@/${vmdk_f##*/}/g" \
-    -e "s/@@DISK1_SIZE@@/${vmdk_size}/g" \
-    -e "s/@@DISK2_CAPACITY@@/${cdrom_vmdk_capacity}/g" \
-    -e "s/@@DISK2_FILENAME@@/${cdrom_vmdk_f##*/}/g" \
-    -e "s/@@DISK2_SIZE@@/${cdrom_vmdk_size}/g"
-
-ovf_sha256=$(sha256sum ${ovf} | cut -d' ' -f1)
+create_from_template "${ovf}" "${my_d}/templates/virtualbox/box.ovf.tmpl" \
+    "date=${serial_stamp}" \
+    "mem_size=1024" \
+    "num_cpus=2" \
+    "ovf_desc_bits=64" \
+    "ovf_id=94" \
+    "ovf_name=${prefix}-${serial_stamp}" \
+    "ovf_os_type=ubuntu64Guest" \
+    "ubuntu_version=${version}" \
+    "disk1_capacity=${vmdk_capacity}" \
+    "disk1_filename=${vmdk_f##*/}" \
+    "disk1_size=${vmdk_size}" \
+    "disk2_capacity=${cdrom_vmdk_capacity}" \
+    "disk2_filename=${cdrom_vmdk_f##*/}" \
+    "disk2_size=${cdrom_vmdk_size}"
 
 # Generate the manifest
 manifest="${box_libvirt_d}/${prefix}.mf"
-cat > "${manifest}" <<EOF
-SHA256(${qcow2_f##*/})= ${qcow2_sha256}
-SHA256(${cdrom_qcow2_f##*/})= ${cdrom_qcow2_sha256}
-EOF
+create_manifest "${manifest}" "${box_libvirt_d}"
 
 manifest="${box_virtualbox_d}/${prefix}.mf"
-cat > "${manifest}" <<EOF
-SHA256(${vmdk_f##*/})= ${vmdk_sha256}
-SHA256(${cdrom_vmdk_f##*/})= ${cdrom_vmdk_sha256}
-SHA256(${ovf##*/})= ${ovf_sha256}
-EOF
+create_manifest "${manifest}" "${box_virtualbox_d}"
 
 # Now create the box
 echo "Creating boxes with the following attributes:"
@@ -235,25 +205,7 @@ QCOW2 information:
 EOM
 
 box_qcow2_f="${build_d}/${build_id}/${suite}-server-cloudimg-${ARCH}-vagrant-libvirt.box"
-mkdir -p "${build_d}/${build_id}"
-tar -C ${box_libvirt_d} \
-    --sort=name \
-    -cf ${box_qcow2_f} \
-    Vagrantfile \
-    metadata.json \
-    ${prefix}.mf \
-    ${qcow2_f##*/} \
-    ${cdrom_qcow2_f##*/}
+create_box "${box_qcow2_f}" "${box_libvirt_d}"
 
 box_vmdk_f="${build_d}/${build_id}/${suite}-server-cloudimg-${ARCH}-vagrant-virtualbox.box"
-mkdir -p "${build_d}/${build_id}"
-tar -C ${box_virtualbox_d} \
-    --sort=name \
-    -cf ${box_vmdk_f} \
-    box.ovf \
-    Vagrantfile \
-    metadata.json \
-    ${prefix}.mf \
-    ${vmdk_f##*/} \
-    ${cdrom_vmdk_f##*/}
-
+create_box "${box_vmdk_f}" "${box_virtualbox_d}"

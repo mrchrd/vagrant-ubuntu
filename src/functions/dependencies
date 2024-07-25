@@ -1,0 +1,16 @@
+# vi: ts=4 expandtab syntax=sh
+
+install_dependencies() {
+    local kernel_release=$(uname -r)
+
+    apt-get update
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        ca-certificates \
+        genisoimage \
+        libguestfs-tools \
+        linux-image-${kernel_release} \
+        python3-vmdkstream \
+        qemu-utils \
+        wget \
+        ;
+}

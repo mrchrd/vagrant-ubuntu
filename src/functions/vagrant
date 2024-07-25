@@ -1,0 +1,74 @@
+# vi: ts=4 expandtab syntax=sh
+
+create_box() {
+    local dest_f=$1
+    local source_d=$2
+
+    local dest_d=$(dirname "${dest_f}")
+
+    mkdir -p "${dest_d}"
+    tar -c \
+        --directory="${source_d}" \
+        --file="${dest_f}" \
+        --sort=name \
+        .
+}
+
+create_configdrive() {
+    seed_d=$1
+
+    # Pad the cdrom, otherwise the image will be invalid
+    dd if=/dev/zero of=${seed_d}/bloat_file bs=1M count=10
+
+    # Create the ISO
+    genisoimage \
+        -output "${seed_d}/seed.iso" \
+        -volid cidata \
+        -joliet -rock \
+        -input-charset utf-8 \
+        "${seed_d}/user-data" \
+        "${seed_d}/meta-data"
+}
+
+create_manifest() {
+    local dest_f=$1
+    local source_d=$2
+
+    rm -f "${dest_f}"
+    for f in $(find "${source_d}" -regextype awk -regex '.*\.(img|ovf|vmdk)$' | sort); do
+        echo "SHA256(${f##*/})= $(get_image_checksum ${f})" >> "${dest_f}"
+    done
+}
+
+create_from_template() {
+    local dest_f=$1
+    local source_t=$2
+    local vars=${@:3}
+
+    local content=$(cat "${source_t}")
+
+    for v in ${vars}; do
+        IFS='=' read -r key val <<< "$v"
+        content="${content//\{\{\.$key\}\}/$val}"
+    done
+
+    echo "${content}" > "${dest_f}"
+}
+
+get_image_capacity() {
+    local image_f=$1
+
+    echo $(qemu-img info "${image_f}" | awk '-F[( ]' '$1 ~ /virtual/ && $NF ~ /bytes.*/ {print$(NF-1)}')
+}
+
+get_image_checksum() {
+    local image_f=$1
+
+    echo $(sha256sum ${image_f} | cut -d' ' -f1)
+}
+
+get_image_size() {
+    local image_f=$1
+
+    echo $(du -b "${image_f}" | cut -f1)
+}

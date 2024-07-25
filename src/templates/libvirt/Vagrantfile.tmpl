@@ -11,7 +11,7 @@ Vagrant.configure("2") do |config|
     libvirt.serial :type => "null"
 
     # If console logging is desired, uncomment this line and remove prior
-    # libvirt.serial :type => "file", :source => {:path => File.join(Dir.pwd, "@@CONSOLE_LOG_FILENAME@@")}
+    # libvirt.serial :type => "file", :source => {:path => File.join(Dir.pwd, "{{.console_log_filename}}")}
 
     # If pseudo TTY is desired, use this line instead
     # libvirt.serial :type => "pty"
